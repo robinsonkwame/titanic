@@ -1,0 +1,7 @@
+numpy>=1.12.1
+pandas>=0.19.2
+scikit-learn>=0.18.1
+nameparser>=0.5.1
+fuzzyset>=0.0.10
+-e git+https://github.com/bwanglzu/Imputer.py#egg=imputer
+-e git+https://github.com/scikit-learn-contrib/boruta_py.git#egg=boruta
