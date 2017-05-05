@@ -1,9 +1,11 @@
 import pandas as pd
+from sklearn.model_selection import StratifiedKFold
 from sklearn import cross_validation as CV
 from sklearn.linear_model import LogisticRegression as LR
 from sklearn.ensemble import RandomForestClassifier as RF
 from sklearn.metrics import roc_auc_score as AUC
 from sklearn.metrics import accuracy_score as accuracy
+from sklearn.base import clone
 
 # adapted from the always excellent fastml.com
 # see: https://github.com/zygmuntz/adversarial-validation/tree/master/numerai
@@ -55,19 +57,50 @@ def distinguish(train, clfs, dtypes=['number'], columns=None, fill_func='median'
 
         _train = _train.fillna(fill_func(), inplace=True)
 
-    best_score = -1
-    for clf in clfs:
-        scores = CV.cross_val_score( clf, _train.drop(label, axis=1),
-                                     train[label], scoring='roc_auc', cv=5)
+    # todo: shuffle dataframe
 
-        print("\tDistinguish: mean AUC: {:.2%}, std: {:.2%} \n".format( scores.mean(), scores.std()))
-        print(clf)
-        if best_score < scores.mean(): # could do weighted against .std?
-            best_score = scores.mean()
-            ret_scores = scores
-            ret_clf = clf
+    X = _train.drop(label, axis=1)# I hope these are pointers, not memory copies
+    Y = _train[label]
 
-    return (ret_scores, ret_clf)
+    # To appropriately generalize (and not overfit by learning and predicting on same set) we
+    # predict on stratified CV splits and gradually fill in our probability predictions of an instance
+    # being from the test set or not
+
+    # We take the best predictions from the set of trained classifiers so that we can construct overall
+    # predictions in place. This incurs a training overhead of |clfs| unfortunately over |n_folds|/|_train|
+
+    cv = CV.StratifiedKFold(Y,
+                            n_folds = 5,
+                            shuffle = True,
+                            random_state = 42)
+
+    for fold, (train_idx, test_idx) in enumerate(cv):
+        print('\t Fold: {}'.format(fold))
+
+        x_train = X.iloc[train_idx]
+        x_test = X.iloc[test_idx]
+
+        y_train = Y.iloc[train_idx]
+        y_test = Y.iloc[test_idx]
+
+        # find best clf for this train/test split and store off predictions
+        best_score = -1
+        best_clf = clfs[0]
+        for clf in clfs:
+            clf.fit(x_train, y_train)
+
+            auc = AUC(y_test, clf.predict_proba(x_test)[:,1])
+            print("AUC: {}".format(auc))
+            print(clf)
+
+            if best_score < auc:
+                best_score = auc
+                best_clf = clf # was clone(clf)
+
+        _train.loc[_train.index[test_idx], 'predicted label proba'] = best_clf.predict_proba(x_test)
+        print('\t best AUC {}'.format(auc))
+
+    return _train # dataframe with predicted label proba, ~1 -> test example, ~0 -> train example
 
 test = pd.read_csv(test_file)
 train = pd.read_csv(train_file)
