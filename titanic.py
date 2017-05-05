@@ -6,8 +6,7 @@ from nameparser import HumanName # for extract mixed order first, last names
 from fuzzyset import FuzzySet # for matching between wiki table names and Titanic roster names
 from imputer import Imputer as KNNimputer #see: https://github.com/bwanglzu/Imputer.py
 from boruta import BorutaPy # pip install git+https://github.com/scikit-learn-contrib/boruta_py.git
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.model_selection import cross_val_score
+from sklearn.ensemble import RandomForestClassifier # for boruta variable selection
 
 # see: http://wikitable2csv.ggor.de/
 regex_home_region = "(?:.*,){0,2}(.*)" # says: ignore first 0 to 2 matches if they exist, but capture remaining content
