@@ -57,6 +57,7 @@ def distinguish(train, clfs, dtypes=['number'], columns=None, fill_func='median'
 
         _train = _train.fillna(fill_func(), inplace=True)
 
+    _train.reset_index(inplace=True, drop=True)
     # todo: shuffle dataframe
 
     X = _train.drop(label, axis=1)# I hope these are pointers, not memory copies
@@ -87,25 +88,27 @@ def distinguish(train, clfs, dtypes=['number'], columns=None, fill_func='median'
         best_score = -1
         best_clf = clfs[0]
         for clf in clfs:
+            # ... assuming that .fit wipes out prior training (otherwise clone(clf)... needed)
             clf.fit(x_train, y_train)
 
             auc = AUC(y_test, clf.predict_proba(x_test)[:,1])
-            print("AUC: {}".format(auc))
-            print(clf)
+            print("AUC: {} ({})".format(auc, clf.__class__.__name__))
 
-            if best_score < auc:
+            if best_score <= auc:
                 best_score = auc
                 best_clf = clf # was clone(clf)
 
-        _train.loc[_train.index[test_idx], 'predicted label proba'] = best_clf.predict_proba(x_test)
+        # map the test_idx offsets to _train Index indices, assign probability of class 'label' == 1
+        _train.loc[_train.index[test_idx], 'predicted label proba'] = best_clf.predict_proba(x_test)[:,1]
         print('\t best AUC {}'.format(auc))
 
+    # could return all best_clfs?
     return _train # dataframe with predicted label proba, ~1 -> test example, ~0 -> train example
 
 test = pd.read_csv(test_file)
 train = pd.read_csv(train_file)
 
-clfs = [RF(n_estimators=100, n_jobs=-1, verbose=True), LR()]
+clfs = [RF(n_estimators=100, n_jobs=-1, verbose=False), LR()]
 
 # todo: incorporate this logic, https://github.com/zygmuntz/adversarial-validation/blob/master/numerai/sort_train.py
 #
