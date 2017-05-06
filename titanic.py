@@ -9,6 +9,7 @@ from boruta import BorutaPy # pip install git+https://github.com/scikit-learn-co
 from sklearn.linear_model import LogisticRegression as LR
 from sklearn.ensemble import RandomForestClassifier as RF
 from sklearn.metrics import roc_auc_score as AUC
+from sklearn.metrics import accuracy_score as accuracy
 
 from adversarial_validation import mark_instances
 from adversarial_validation import distinguish
@@ -169,6 +170,11 @@ x_validate = validate.select_dtypes(['number']).drop(['Survived', 'Is Test'], ax
 clf = LR()
 clf.fit(x_train, y_train)
 auc = AUC(y_validate, clf.predict_proba(x_validate)[:,1])
+# auc
 # 0.9999
+
+acc = accuracy(y_validate, clf.predict(x_validate))
+# acc
+# 0.978
 
 # I don't really believe, must be leakage somewhere, todo: take a hard look, if nothign, then submit predictions
