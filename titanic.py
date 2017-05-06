@@ -8,6 +8,7 @@ from imputer import Imputer as KNNimputer #see: https://github.com/bwanglzu/Impu
 from boruta import BorutaPy # pip install git+https://github.com/scikit-learn-contrib/boruta_py.git
 from sklearn.linear_model import LogisticRegression as LR
 from sklearn.ensemble import RandomForestClassifier as RF
+from sklearn.metrics import roc_auc_score as AUC
 
 from adversarial_validation import mark_instances
 from adversarial_validation import distinguish
@@ -141,55 +142,33 @@ marked = mark_instances(train = titanic[~pd.isnull(titanic.Survived)],
                         response_column='Survived')
 
 # To prevent test/train indicator leakage we drop PassengerId since Ids part 839 or so are all
-# test instances
+# test instances. Survived is dropped because it has NaNs in it and imputed would induce leakage :)
 marked.drop(['PassengerId', 'Survived'], axis=1, inplace=True)
 adversarial = distinguish(marked, clfs)
 
 titanic['Is Test'] = adversarial['predicted label proba']
-del adversarial # just needed the lable probabilities
+del adversarial # just needed the labeled probabilities
 
-# to validiate model we'd do somethign with this ...
-# b[b.label == 0].sort_values(by='predicted label proba', axis='index', ascending=False)['predicted label proba']
+# Train and adversarially validate a model
+# todo: fix silly copy message
+instances = titanic[~pd.isnull(titanic.Survived)]
+instances.sort_values(by='Is Test', axis='index', ascending=False, inplace=True)
 
+validation_size = int(0.10 * len(instances))
 
+train = instances.iloc[:-validation_size]
+validate = instances.iloc[-validation_size:]
 
+y_train = train.Survived
+y_validate = validate.Survived
 
-## ... now with selected columns we do a quick classification check, say logistic regression
-#from sklearn.ensemble import RandomForestClassifier, ExtraTreesClassifier
-#from sklearn.naive_bayes import GaussianNB
-#from sklearn.linear_model import LogisticRegressionCV
-#
-## so we know that we want to compare classifers, one good way is to compare AUC
-## another point is that we should be doing adversarial validation, see: https://github.com/zygmuntz/adversarial-validation
-## ... this would also be of benefit to the community, i think. Something to consider
-#
-## * case in point, actually, the next step woudl be to instead implement adversarial validation adn then throw
-## automl at the train/test sets
-#
-#rand_state = 42
-#fold = KFold(len(titanic)-1, n_folds=5, shuffle=True, random_state=rand_state)
-#
-#searchCV = LogisticRegressionCV(
-#     Cs=list(np.power(10.0, np.arange(-10, 10)))
-#    ,penalty='l2'
-#    ,scoring='roc_auc'
-#    ,cv=fold
-#    ,random_state=rand_state
-#    ,max_iter=10000
-#    ,fit_intercept=True
-#    ,solver='newton-cg'
-#    ,tol=10
-#)
-#mask = titanic['Survived'].notnull()
-#
-#searchCV.fit(titanic.loc[mask, filtered_cols].values, titanic.loc[mask, 'Survived'].values)
-## getting IndexError: index 891 is out of bounds for axis 0 with size 891
-#
-## something is wrong between fold and the fit(), see
-##In [154]: from sklearn.cross_validation import KFold
-##.../cross_validation.py:44: DeprecationWarning: This module was deprecated in version 0.18 in favor of the model_selection module into which all the refactored classes and functions are moved. Also note that the interface of the new CV iterators are different from that of this module. This module will be removed in 0.20.
-##  "This module will be removed in 0.20.", DeprecationWarning)
-##
-##
-#
-#print ('Max auc_roc:', searchCV.scores_[1].max())
+# could I keep Is Test?
+x_train = train.select_dtypes(['number']).drop(['Survived', 'Is Test'], axis=1)
+x_validate = validate.select_dtypes(['number']).drop(['Survived', 'Is Test'], axis=1)
+
+clf = LR()
+clf.fit(x_train, y_train)
+auc = AUC(y_validate, clf.predict_proba(x_validate)[:,1])
+# 0.9999
+
+# I don't really believe, must be leakage somewhere, todo: take a hard look, if nothign, then submit predictions
