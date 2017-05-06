@@ -6,7 +6,8 @@ from nameparser import HumanName # for extract mixed order first, last names
 from fuzzyset import FuzzySet # for matching between wiki table names and Titanic roster names
 from imputer import Imputer as KNNimputer #see: https://github.com/bwanglzu/Imputer.py
 from boruta import BorutaPy # pip install git+https://github.com/scikit-learn-contrib/boruta_py.git
-from sklearn.ensemble import RandomForestClassifier # for boruta variable selection
+from sklearn.linear_model import LogisticRegression as LR
+from sklearn.ensemble import RandomForestClassifier as RF
 
 from adversarial_validation import mark_instances
 from adversarial_validation import distinguish
@@ -16,9 +17,9 @@ regex_home_region = "(?:.*,){0,2}(.*)" # says: ignore first 0 to 2 matches if th
 sep = ","
 data = ["train.csv", "test.csv"]
 
-titanic = pd.concat( pd.read_csv(filename, sep=sep) for filename in [os.path.join("../", "data", csv) for csv in data] )
+titanic = pd.concat( pd.read_csv(filename, sep=sep) for filename in [os.path.join("./", "data", csv) for csv in data] )
 titanic.reset_index(inplace=True) # concat'ed index from two data frames
-df = pd.read_csv("../data/wiki_table.csv", sep=sep)
+df = pd.read_csv("./data/wiki_table.csv", sep=sep)
 
 # Remove extraneous descriptions from the Name field from wiki table names
 extra_descriptions = ["and chauffeur,", "and cook,", "and maid,",
@@ -119,53 +120,76 @@ titanic['Age'] = X_imputed[:,]
 
 del X_imputed # we're done with the imputed matrix
 
+titanic.drop('index', axis=1, inplace=True)
+
 # So now we have the full transformed data frame, with self referential columns and additional insight
 # from people's place of birth. Let's do some analysis of variables...
 
-# see: https://github.com/scikit-learn-contrib/boruta_py
-feat_rf = RandomForestClassifier(n_jobs=-1, class_weight='auto', max_depth=5)
-feat_selector = BorutaPy(rf, n_estimators='auto', verbose=2, random_state=1)
-feat_selector.fit(titanic.loc[mask, imputation_columns].values, titanic.loc[mask, 'Survived'].values)
-# could use .transform() but that works on .values (numpy matrix) instead of pandas df ...
-selected_cols = [i for (i, v) in zip(imputation_columns, feat_selector.support_) if v]
+## ... determine which variables together are the important
+## note: probably not needed, validation score is so high
+## see: https://github.com/scikit-learn-contrib/boruta_py
+#feat_rf = RandomForestClassifier(n_jobs=-1, class_weight='auto', max_depth=5)
+#feat_selector = BorutaPy(rf, n_estimators='auto', verbose=2, random_state=1)
+#feat_selector.fit(titanic.loc[mask, imputation_columns].values, titanic.loc[mask, 'Survived'].values)
+## could use .transform() but that works on .values (numpy matrix) instead of pandas df ...
+#selected_cols = [i for (i, v) in zip(imputation_columns, feat_selector.support_) if v]
+
+# ... construct adverserial train, validation set that should tend towards actual test scores
+clfs = [RF(n_estimators=100, n_jobs=-1, verbose=False), LR()]
+marked = mark_instances(train = titanic[~pd.isnull(titanic.Survived)],
+                        test = titanic[pd.isnull(titanic.Survived)],
+                        response_column='Survived')
+
+# To prevent test/train indicator leakage we drop PassengerId since Ids part 839 or so are all
+# test instances
+marked.drop(['PassengerId', 'Survived'], axis=1, inplace=True)
+adversarial = distinguish(marked, clfs)
+
+titanic['Is Test'] = adversarial['predicted label proba']
+del adversarial # just needed the lable probabilities
+
+# to validiate model we'd do somethign with this ...
+# b[b.label == 0].sort_values(by='predicted label proba', axis='index', ascending=False)['predicted label proba']
 
 
-# ... now with selected columns we do a quick classification check, say logistic regression
-from sklearn.ensemble import RandomForestClassifier, ExtraTreesClassifier
-from sklearn.naive_bayes import GaussianNB
-from sklearn.linear_model import LogisticRegressionCV
 
-# so we know that we want to compare classifers, one good way is to compare AUC
-# another point is that we should be doing adversarial validation, see: https://github.com/zygmuntz/adversarial-validation
-# ... this would also be of benefit to the community, i think. Something to consider
 
-# * case in point, actually, the next step woudl be to instead implement adversarial validation adn then throw
-# automl at the train/test sets
-
-rand_state = 42
-fold = KFold(len(titanic)-1, n_folds=5, shuffle=True, random_state=rand_state)
-
-searchCV = LogisticRegressionCV(
-     Cs=list(np.power(10.0, np.arange(-10, 10)))
-    ,penalty='l2'
-    ,scoring='roc_auc'
-    ,cv=fold
-    ,random_state=rand_state
-    ,max_iter=10000
-    ,fit_intercept=True
-    ,solver='newton-cg'
-    ,tol=10
-)
-mask = titanic['Survived'].notnull()
-
-searchCV.fit(titanic.loc[mask, filtered_cols].values, titanic.loc[mask, 'Survived'].values)
-# getting IndexError: index 891 is out of bounds for axis 0 with size 891
-
-# something is wrong between fold and the fit(), see
-#In [154]: from sklearn.cross_validation import KFold
-#.../cross_validation.py:44: DeprecationWarning: This module was deprecated in version 0.18 in favor of the model_selection module into which all the refactored classes and functions are moved. Also note that the interface of the new CV iterators are different from that of this module. This module will be removed in 0.20.
-#  "This module will be removed in 0.20.", DeprecationWarning)
+## ... now with selected columns we do a quick classification check, say logistic regression
+#from sklearn.ensemble import RandomForestClassifier, ExtraTreesClassifier
+#from sklearn.naive_bayes import GaussianNB
+#from sklearn.linear_model import LogisticRegressionCV
 #
+## so we know that we want to compare classifers, one good way is to compare AUC
+## another point is that we should be doing adversarial validation, see: https://github.com/zygmuntz/adversarial-validation
+## ... this would also be of benefit to the community, i think. Something to consider
 #
-
-print ('Max auc_roc:', searchCV.scores_[1].max())
+## * case in point, actually, the next step woudl be to instead implement adversarial validation adn then throw
+## automl at the train/test sets
+#
+#rand_state = 42
+#fold = KFold(len(titanic)-1, n_folds=5, shuffle=True, random_state=rand_state)
+#
+#searchCV = LogisticRegressionCV(
+#     Cs=list(np.power(10.0, np.arange(-10, 10)))
+#    ,penalty='l2'
+#    ,scoring='roc_auc'
+#    ,cv=fold
+#    ,random_state=rand_state
+#    ,max_iter=10000
+#    ,fit_intercept=True
+#    ,solver='newton-cg'
+#    ,tol=10
+#)
+#mask = titanic['Survived'].notnull()
+#
+#searchCV.fit(titanic.loc[mask, filtered_cols].values, titanic.loc[mask, 'Survived'].values)
+## getting IndexError: index 891 is out of bounds for axis 0 with size 891
+#
+## something is wrong between fold and the fit(), see
+##In [154]: from sklearn.cross_validation import KFold
+##.../cross_validation.py:44: DeprecationWarning: This module was deprecated in version 0.18 in favor of the model_selection module into which all the refactored classes and functions are moved. Also note that the interface of the new CV iterators are different from that of this module. This module will be removed in 0.20.
+##  "This module will be removed in 0.20.", DeprecationWarning)
+##
+##
+#
+#print ('Max auc_roc:', searchCV.scores_[1].max())

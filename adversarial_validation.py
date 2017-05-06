@@ -1,6 +1,7 @@
 import pandas as pd
 from sklearn.model_selection import StratifiedKFold
 from sklearn import cross_validation as CV
+# use model_selection CV
 from sklearn.linear_model import LogisticRegression as LR
 from sklearn.ensemble import RandomForestClassifier as RF
 from sklearn.metrics import roc_auc_score as AUC
@@ -17,16 +18,19 @@ test_file = './data/test.csv'
 
 label = 'label' # name of test/train indicator column
 
-def mark_instances(train, test, response_column=-1, inplace=True, copy=True):
+def mark_instances(train, test, response_column=-1, copy=True):
     """
     Construct combined dataframe with instances marked as from test or training set
     """
     ret = None# return variable, the combined data frame with train/test indicator column
 
+    train.is_copy = False
+    test.is_copy = False # to remove indexing view versus copy warning
+
     if isinstance(response_column, int):
-        train.drop(train.columns[response_column], axis=1, inplace=inplace) #todo: remove inplace?
+        train.drop(train.columns[response_column], axis=1, inplace=True) #todo: remove inplace?
     else:
-        train.drop(response_column, axis=1, inplace=inplace)
+        train.drop(response_column, axis=1, inplace=True)
 
     train[label] = 0
     test[label] = 1
@@ -58,6 +62,8 @@ def distinguish(train, clfs, dtypes=['number'], columns=None, fill_func='median'
             fill_func = _train.median
 
         _train = _train.fillna(fill_func(), inplace=True)
+
+    assert _train.isnull().values.any() == False, "NaN detected in data frame!"
 
     _train.reset_index(inplace=True, drop=True)
 
