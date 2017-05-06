@@ -6,6 +6,7 @@ from sklearn.ensemble import RandomForestClassifier as RF
 from sklearn.metrics import roc_auc_score as AUC
 from sklearn.metrics import accuracy_score as accuracy
 from sklearn.base import clone
+from sklearn.utils import shuffle
 
 # adapted from the always excellent fastml.com
 # see: https://github.com/zygmuntz/adversarial-validation/tree/master/numerai
@@ -45,6 +46,7 @@ def distinguish(train, clfs, dtypes=['number'], columns=None, fill_func='median'
     ret_clf = None
 
     _train = train.copy() # note: doubles memory :-/
+    # shuffle(...)? Sincew we use random CV splits I don't think we have to shuffle the data frame
 
     if columns:
         _train = train[columns]
@@ -58,7 +60,6 @@ def distinguish(train, clfs, dtypes=['number'], columns=None, fill_func='median'
         _train = _train.fillna(fill_func(), inplace=True)
 
     _train.reset_index(inplace=True, drop=True)
-    # todo: shuffle dataframe
 
     X = _train.drop(label, axis=1)# I hope these are pointers, not memory copies
     Y = _train[label]
@@ -92,7 +93,6 @@ def distinguish(train, clfs, dtypes=['number'], columns=None, fill_func='median'
             clf.fit(x_train, y_train)
 
             auc = AUC(y_test, clf.predict_proba(x_test)[:,1])
-            print("AUC: {} ({})".format(auc, clf.__class__.__name__))
 
             if best_score <= auc:
                 best_score = auc
@@ -100,25 +100,24 @@ def distinguish(train, clfs, dtypes=['number'], columns=None, fill_func='median'
 
         # map the test_idx offsets to _train Index indices, assign probability of class 'label' == 1
         _train.loc[_train.index[test_idx], 'predicted label proba'] = best_clf.predict_proba(x_test)[:,1]
-        print('\t best AUC {}'.format(auc))
+        print("AUC: {} ({})".format(best_score, best_clf.__class__.__name__))
 
-    # could return all best_clfs?
     return _train # dataframe with predicted label proba, ~1 -> test example, ~0 -> train example
 
 test = pd.read_csv(test_file)
 train = pd.read_csv(train_file)
 
+# example usage
+# todo: convert to sklearn compatiable feature transformer
 clfs = [RF(n_estimators=100, n_jobs=-1, verbose=False), LR()]
+k = mark_instances(response_column='Survived')
 
-# todo: incorporate this logic, https://github.com/zygmuntz/adversarial-validation/blob/master/numerai/sort_train.py
-#
-# looks like he basically runs a version of distinguish on stratifiedKFold, where the clf is fit on a subset
-# and the remaining subset is used for AUC against clf.predict_proba()
-# then the predictions are stored off
-#
-# This is done so that we can look at a histogram of probab on is a test example or not (would be flat if no data shift)
-# additionally, or whats happenning, is that they're using the known test labels, looking at the proba, outputing a histogram
-# as well as measn accuracy. This is nice to have btu I dont think we care as much.
-#
-# what we do want is the sorted training items by proba of being a test example so that we can properly validate. Even then
-# we really only just need the proba values, so most of sort_train can be replaced with predict_proba and returna  column with those
+# We want all numeric columns except for passenger ID, which leaks test labels since
+# all values after 800 or are test labels
+k.drop('PassengerId', axis=1, inplace=True)
+
+b = distinguish(k, clfs)
+
+# so now we can sort instances by predicted label and validate against those instances
+# that more like the actual test examples
+# b[b.label == 0].sort_values(by='predicted label proba', axis='index', ascending=False)
