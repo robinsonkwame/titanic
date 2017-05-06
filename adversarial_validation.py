@@ -17,7 +17,7 @@ test_file = './data/test.csv'
 
 label = 'label' # name of test/train indicator column
 
-def mark_instances(train=train, test=test, response_column=-1, inplace=True, copy=True):
+def mark_instances(train, test, response_column=-1, inplace=True, copy=True):
     """
     Construct combined dataframe with instances marked as from test or training set
     """
@@ -104,20 +104,22 @@ def distinguish(train, clfs, dtypes=['number'], columns=None, fill_func='median'
 
     return _train # dataframe with predicted label proba, ~1 -> test example, ~0 -> train example
 
-test = pd.read_csv(test_file)
-train = pd.read_csv(train_file)
+#test = pd.read_csv(test_file)
+#train = pd.read_csv(train_file)
 
-# example usage
-# todo: convert to sklearn compatiable feature transformer
-clfs = [RF(n_estimators=100, n_jobs=-1, verbose=False), LR()]
-k = mark_instances(response_column='Survived')
-
-# We want all numeric columns except for passenger ID, which leaks test labels since
-# all values after 800 or are test labels
-k.drop('PassengerId', axis=1, inplace=True)
-
-b = distinguish(k, clfs)
-
-# so now we can sort instances by predicted label and validate against those instances
-# that more like the actual test examples
-# b[b.label == 0].sort_values(by='predicted label proba', axis='index', ascending=False)
+## example usage
+## todo: convert to sklearn compatiable feature transformer
+#clfs = [RF(n_estimators=100, n_jobs=-1, verbose=False), LR()]
+#k = mark_instances(response_column='Survived')
+#
+## We want all numeric columns except for passenger ID, which leaks test labels since
+## all values after 800 or are test labels
+#k.drop('PassengerId', axis=1, inplace=True)
+#
+#b = distinguish(k, clfs)
+#
+## so now we can sort instances by predicted label and validate against those instances
+## that more like the actual test examples
+##
+## these are the the indices, predicted probabilities
+## b[b.label == 0].sort_values(by='predicted label proba', axis='index', ascending=False)['predicted label proba']

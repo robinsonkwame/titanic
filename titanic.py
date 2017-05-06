@@ -8,6 +8,9 @@ from imputer import Imputer as KNNimputer #see: https://github.com/bwanglzu/Impu
 from boruta import BorutaPy # pip install git+https://github.com/scikit-learn-contrib/boruta_py.git
 from sklearn.ensemble import RandomForestClassifier # for boruta variable selection
 
+from adversarial_validation import mark_instances
+from adversarial_validation import distinguish
+
 # see: http://wikitable2csv.ggor.de/
 regex_home_region = "(?:.*,){0,2}(.*)" # says: ignore first 0 to 2 matches if they exist, but capture remaining content
 sep = ","
@@ -166,4 +169,3 @@ searchCV.fit(titanic.loc[mask, filtered_cols].values, titanic.loc[mask, 'Survive
 #
 
 print ('Max auc_roc:', searchCV.scores_[1].max())
-
