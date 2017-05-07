@@ -95,7 +95,7 @@ titanic['Ticket'] = titanic['Ticket'].str.extract("(\d*)$", expand=False)
 tmp_df = titanic['Ticket'].value_counts()
 titanic['People on Ticket'] = titanic['Ticket'].map(tmp_df)
 
-# ... death ratios
+# ... death ratio
 tmp_df = pd.crosstab(titanic['Ticket'], titanic['Survived'])
 tmp_df.columns = ["On Ticket Died", "On Ticket Lived"]
 tmp_df.reset_index(inplace=True)
@@ -118,7 +118,7 @@ impute = KNNimputer()
 X_imputed = impute.knn(titanic[imputation_columns], column='Age', k=10)
 # There is one value that remains nan (all neighbors were nan), so we impute the median
 X_imputed[np.argwhere(np.isnan(X_imputed[:,0])), 0] = np.nanmedian(X_imputed[:, 0])
-titanic['Age'] = X_imputed[:,]
+titanic['Age'] = X_imputed[:,-1] # last column is imputed column # was [:,], hmm
 
 del X_imputed # we're done with the imputed matrix
 
@@ -136,54 +136,58 @@ titanic.drop('index', axis=1, inplace=True)
 ## could use .transform() but that works on .values (numpy matrix) instead of pandas df ...
 #selected_cols = [i for (i, v) in zip(imputation_columns, feat_selector.support_) if v]
 
+if True:
 # ... construct adverserial train, validation set that should tend towards actual test scores
-clfs = [RF(n_estimators=100, n_jobs=-1, verbose=False), LR()]
-marked = mark_instances(train = titanic[~pd.isnull(titanic.Survived)],
-                        test = titanic[pd.isnull(titanic.Survived)],
-                        response_column='Survived')
+    clfs = [RF(n_estimators=100, n_jobs=-1, verbose=False), LR()]
+    marked = mark_instances(train = titanic[~pd.isnull(titanic.Survived)],
+                            test = titanic[pd.isnull(titanic.Survived)],
+                            response_column='Survived')
 
 # To prevent test/train indicator leakage we drop PassengerId since Ids part 839 or so are all
 # test instances. Survived is dropped because it has NaNs in it and imputed would induce leakage :)
-marked.drop(['PassengerId', 'Survived'], axis=1, inplace=True)
-adversarial = distinguish(marked, clfs)
+    marked.drop(['PassengerId', 'Survived'], axis=1, inplace=True)
+    adversarial = distinguish(marked, clfs)
 
-titanic['Is Test'] = adversarial['predicted label proba']
-del adversarial # just needed the labeled probabilities
+    titanic['Is Test'] = adversarial['predicted label proba']
+    del adversarial # just needed the labeled probabilities
 
 # Train and adversarially validate a model
-instances = titanic[~pd.isnull(titanic.Survived)]
+    instances = titanic[~pd.isnull(titanic.Survived)]
 #todo: fix silly copy message
-instances.sort_values(by='Is Test', axis='index', ascending=False, inplace=True)
+    instances.sort_values(by='Is Test', axis='index', ascending=False, inplace=True)
 
-validation_size = int(0.10 * len(instances))
+    validation_size = int(0.10 * len(instances))
 
-train = instances.iloc[:-validation_size]
-validate = instances.iloc[-validation_size:]
+    train = instances.iloc[:-validation_size]
+    validate = instances.iloc[-validation_size:]
 
-y_train = train.Survived
-y_validate = validate.Survived
+    y_train = train.Survived
+    y_validate = validate.Survived
 
 # could I keep Is Test?
-x_train = train.select_dtypes(['number']).drop(['Survived', 'Is Test'], axis=1)
-x_validate = validate.select_dtypes(['number']).drop(['Survived', 'Is Test'], axis=1)
+    x_train = train.select_dtypes(['number']).drop(['Survived', 'Is Test'], axis=1)
+    x_validate = validate.select_dtypes(['number']).drop(['Survived', 'Is Test'], axis=1)
 
-clf = LR()
-clf.fit(x_train, y_train)
-auc = AUC(y_validate, clf.predict_proba(x_validate)[:,1])
+    clf = LR()
+    clf.fit(x_train, y_train)
+    auc = AUC(y_validate, clf.predict_proba(x_validate)[:,1])
 # auc
 # 0.9999
 
-acc = accuracy(y_validate, clf.predict(x_validate))
+    acc = accuracy(y_validate, clf.predict(x_validate))
 # acc
 # 0.978
 
+# todo: Figure out why PassengerIds aren't aligned (saying Id 2, etc are unknwon)
+# this suggests that the indices were shuffled and then reset somewhere alogn the way
+
 # Predict unknown Titanic passengers in submission format
-x_test = titanic[pd.isnull(titanic.Survived)]
-x_test = x_test.select_dtypes(['number']).drop(['Survived', 'Is Test'], axis=1)
+    x_test = titanic[pd.isnull(titanic.Survived)]
+    x_test = x_test.select_dtypes(['number']).drop(['Survived', 'Is Test'], axis=1)
 # fill NaN with zero so we can predict
-x_test.fillna(inplace=True, value=0) # fills On Ticket Lived/Died with 0s
+    x_test.fillna(inplace=True, value=0) # fills On Ticket Lived/Died with 0s
 
 # I don't really believe, must be leakage somewhere, todo: take a hard look, if nothign, then submit predictions
-predictions = pd.DataFrame({'PassengerId':x_test.index,
-                            'Survived':clf.predict(x_test)})
-predictions.to_csv('./data/submission.csv', index=False)
+    predictions = pd.DataFrame({'PassengerId':x_test.index,
+                                'Survived':clf.predict(x_test)})
+    predictions.to_csv('./data/submission.csv', index=False)
