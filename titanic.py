@@ -151,8 +151,8 @@ titanic['Is Test'] = adversarial['predicted label proba']
 del adversarial # just needed the labeled probabilities
 
 # Train and adversarially validate a model
-# todo: fix silly copy message
 instances = titanic[~pd.isnull(titanic.Survived)]
+#todo: fix silly copy message
 instances.sort_values(by='Is Test', axis='index', ascending=False, inplace=True)
 
 validation_size = int(0.10 * len(instances))
@@ -177,4 +177,13 @@ acc = accuracy(y_validate, clf.predict(x_validate))
 # acc
 # 0.978
 
+# Predict unknown Titanic passengers in submission format
+x_test = titanic[pd.isnull(titanic.Survived)]
+x_test = x_test.select_dtypes(['number']).drop(['Survived', 'Is Test'], axis=1)
+# fill NaN with zero so we can predict
+x_test.fillna(inplace=True, value=0) # fills On Ticket Lived/Died with 0s
+
 # I don't really believe, must be leakage somewhere, todo: take a hard look, if nothign, then submit predictions
+predictions = pd.DataFrame({'PassengerId':x_test.index,
+                            'Survived':clf.predict(x_test)})
+predictions.to_csv('./data/submission.csv', index=False)
