@@ -188,6 +188,6 @@ if True:
     x_test.fillna(inplace=True, value=0) # fills On Ticket Lived/Died with 0s
 
 # I don't really believe, must be leakage somewhere, todo: take a hard look, if nothign, then submit predictions
-    predictions = pd.DataFrame({'PassengerId':x_test.index,
+    predictions = pd.DataFrame({'PassengerId':x_test.PassengerId,
                                 'Survived':clf.predict(x_test)})
     predictions.to_csv('./data/submission.csv', index=False)
