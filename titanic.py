@@ -136,45 +136,46 @@ titanic.drop('index', axis=1, inplace=True)
 ## could use .transform() but that works on .values (numpy matrix) instead of pandas df ...
 #selected_cols = [i for (i, v) in zip(imputation_columns, feat_selector.support_) if v]
 
-if True:
 # ... construct adverserial train, validation set that should tend towards actual test scores
-    clfs = [RF(n_estimators=100, n_jobs=-1, verbose=False), LR()]
-    marked = mark_instances(train = titanic[~pd.isnull(titanic.Survived)],
-                            test = titanic[pd.isnull(titanic.Survived)],
-                            response_column='Survived')
+clfs = [RF(n_estimators=100, n_jobs=-1, verbose=False), LR()]
+marked = mark_instances(train = titanic[~pd.isnull(titanic.Survived)],
+                        test = titanic[pd.isnull(titanic.Survived)],
+                        response_column='Survived')
 
 # To prevent test/train indicator leakage we drop PassengerId since Ids part 839 or so are all
 # test instances. Survived is dropped because it has NaNs in it and imputed would induce leakage :)
-    marked.drop(['PassengerId', 'Survived'], axis=1, inplace=True)
-    adversarial = distinguish(marked, clfs)
+marked.drop(['PassengerId', 'Survived'], axis=1, inplace=True)
+adversarial = distinguish(marked, clfs)
 
-    titanic['Is Test'] = adversarial['predicted label proba']
-    del adversarial # just needed the labeled probabilities
+titanic['Is Test'] = adversarial['predicted label proba']
+del adversarial # just needed the labeled probabilities
 
 # Train and adversarially validate a model
-    instances = titanic[~pd.isnull(titanic.Survived)]
+instances = titanic[~pd.isnull(titanic.Survived)]
 #todo: fix silly copy message
-    instances.sort_values(by='Is Test', axis='index', ascending=False, inplace=True)
+instances.sort_values(by='Is Test', axis='index', ascending=False, inplace=True)
 
-    validation_size = int(0.10 * len(instances))
+validation_size = int(0.10 * len(instances))
 
-    train = instances.iloc[:-validation_size]
-    validate = instances.iloc[-validation_size:]
+train = instances.iloc[:-validation_size]
+validate = instances.iloc[-validation_size:]
 
-    y_train = train.Survived
-    y_validate = validate.Survived
+y_train = train.Survived
+y_validate = validate.Survived
 
 # could I keep Is Test?
-    x_train = train.select_dtypes(['number']).drop(['Survived', 'Is Test'], axis=1)
-    x_validate = validate.select_dtypes(['number']).drop(['Survived', 'Is Test'], axis=1)
+x_train = train.select_dtypes(['number']).drop(['Survived', 'Is Test'], axis=1)
+x_validate = validate.select_dtypes(['number']).drop(['Survived', 'Is Test'], axis=1)
 
-    clf = LR()
-    clf.fit(x_train, y_train)
-    auc = AUC(y_validate, clf.predict_proba(x_validate)[:,1])
+clf = LR()
+clf.fit(x_train, y_train)
+auc = AUC(y_validate, clf.predict_proba(x_validate)[:,1])
+print('\t adversarial auc: {}'.format(auc))
 # auc
 # 0.9999
 
-    acc = accuracy(y_validate, clf.predict(x_validate))
+acc = accuracy(y_validate, clf.predict(x_validate))
+print('\t adversarial accuracy: {}'.format(acc))
 # acc
 # 0.978
 
@@ -182,12 +183,23 @@ if True:
 # this suggests that the indices were shuffled and then reset somewhere alogn the way
 
 # Predict unknown Titanic passengers in submission format
-    x_test = titanic[pd.isnull(titanic.Survived)]
-    x_test = x_test.select_dtypes(['number']).drop(['Survived', 'Is Test'], axis=1)
+
+clf = LR()
+
+x_train = titanic[~pd.isnull(titanic.Survived)].select_dtypes(['number']).drop(['Survived', 'Is Test'], axis=1)
+y_train = titanic[~pd.isnull(titanic.Survived)].Survived
+
+x_test = titanic[pd.isnull(titanic.Survived)]
+x_test = x_test.select_dtypes(['number']).drop(['Survived', 'Is Test'], axis=1)
+
 # fill NaN with zero so we can predict
-    x_test.fillna(inplace=True, value=0) # fills On Ticket Lived/Died with 0s
+# this is bleeding causal information but maybe we should drop this from the model?
+x_test.fillna(inplace=True, value=0) # fills On Ticket Lived/Died with 0s
+
+clf.fit(x_train, y_train)
 
 # I don't really believe, must be leakage somewhere, todo: take a hard look, if nothign, then submit predictions
-    predictions = pd.DataFrame({'PassengerId':x_test.PassengerId,
-                                'Survived':int(clf.predict(x_test))})
-    predictions.to_csv('./data/submission.csv', index=False)
+predictions = pd.DataFrame({'PassengerId':x_test.PassengerId,
+                            'Survived':clf.predict(x_test)})
+predictions.Survived = predictions.Survived.astype(int)
+predictions.to_csv('./data/submission.csv', index=False)
